@@ -3,6 +3,7 @@ package caddyjwt
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
@@ -72,6 +73,28 @@ func parseCaddyfile(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error)
 				}
 			case "header_first":
 				return nil, h.Err("option header_first deprecated, the priority now defaults to from_query > from_header > from_cookies")
+
+			case "refresh_window":
+				var refreshWindow string
+				if !h.AllArgs(&refreshWindow) {
+					return nil, h.Errf("invalid refresh_window")
+				}
+
+				var err error
+				if ja.RefreshWindow, err = time.ParseDuration(refreshWindow); err != nil {
+					return nil, h.Errf("invalid refresh_window: %v", err)
+				}
+
+			case "min_refresh_interval":
+				var minRefreshInterval string
+				if !h.AllArgs(&minRefreshInterval) {
+					return nil, h.Errf("invalid min_refresh_interval")
+				}
+
+				var err error
+				if ja.MinRefreshInterval, err = time.ParseDuration(minRefreshInterval); err != nil {
+					return nil, h.Errf("invalid min_refresh_interval: %v", err)
+				}
 
 			default:
 				return nil, h.Errf("unrecognized option: %s", opt)
