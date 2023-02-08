@@ -133,6 +133,36 @@ type JWTAuth struct {
 	// Use dot notation to access nested claims.
 	MetaClaims map[string]string `json:"meta_claims"`
 
+	// WithRefreshWindow specifies the interval between checks for refreshes.
+	//
+	// If not specified, the default value is 15 minutes.
+	//
+	// You generally do not want to make this value too small, as it can easily
+	// be considered a DoS attack, and there is no backoff mechanism for failed
+	// attempts.
+	RefreshWindow time.Duration `json:"refresh_window"`
+
+	// WithMinRefreshInterval specifies the minimum refresh interval to be used
+	// when using `jwk.Cache`. This value is ONLY used if you did not specify
+	// a user-supplied static refresh interval via `WithRefreshInterval`.
+	//
+	// This value is used as a fallback value when tokens are refreshed.
+	//
+	// When we fetch the key from a remote URL, we first look at the max-age
+	// directive from Cache-Control response header. If this value is present,
+	// we compare the max-age value and the value specified by this option
+	// and take the larger one.
+	//
+	// Next we check for the Expires header, and similarly if the header is
+	// present, we compare it against the value specified by this option,
+	// and take the larger one.
+	//
+	// Finally, if neither of the above headers are present, we use the
+	// value specified by this option as the next refresh timing
+	//
+	// If unspecified, the minimum refresh interval is 1 hour
+	MinRefreshInterval time.Duration `json:"min_refresh_interval"`
+
 	logger        *zap.Logger
 	parsedSignKey interface{} // can be []byte, *rsa.PublicKey, *ecdsa.PublicKey, etc.
 	jwkCachedSet  jwk.Set
@@ -163,8 +193,19 @@ func (ja *JWTAuth) usingJWK() bool {
 }
 
 func (ja *JWTAuth) setupJWKLoader() {
-	cache := jwk.NewCache(context.Background(), jwk.WithErrSink(ja))
-	cache.Register(ja.JWKURL)
+	cacheOptions := []jwk.CacheOption{
+		jwk.WithErrSink(ja),
+	}
+	if ja.RefreshWindow != 0 {
+		cacheOptions = append(cacheOptions, jwk.WithRefreshWindow(ja.RefreshWindow))
+	}
+	cache := jwk.NewCache(context.Background(), cacheOptions...)
+
+	registerOptions := []jwk.RegisterOption{}
+	if ja.MinRefreshInterval != 0 {
+		registerOptions = append(registerOptions, jwk.WithMinRefreshInterval(ja.MinRefreshInterval))
+	}
+	cache.Register(ja.JWKURL, registerOptions...)
 	ja.jwkCachedSet = jwk.NewCachedSet(cache, ja.JWKURL)
 	ja.logger.Info("using JWKs from URL", zap.String("url", ja.JWKURL), zap.Int("loaded_keys", ja.jwkCachedSet.Len()))
 }
